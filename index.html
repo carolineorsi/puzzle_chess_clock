@@ -367,7 +367,7 @@
 
     if (!state.started){
       state.started = true;
-      setActive(idx);
+      setActive(state.next[idx]);
       return;
     }
     if (idx !== state.active) return; // only the running player can pass the turn
