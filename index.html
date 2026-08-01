@@ -259,6 +259,28 @@
 
   var state = null;
 
+  // ---------- Screen Wake Lock: keep the device awake while a game is active ----------
+  var wakeLock = null;
+
+  function requestWakeLock(){
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').then(function(lock){
+      wakeLock = lock;
+      wakeLock.addEventListener('release', function(){ wakeLock = null; });
+    }).catch(function(){ /* wake lock unavailable/denied; ignore */ });
+  }
+
+  function releaseWakeLock(){
+    if (wakeLock) wakeLock.release();
+  }
+
+  document.addEventListener('visibilitychange', function(){
+    // The wake lock is auto-released when the tab is hidden; re-acquire on return.
+    if (document.visibilityState === 'visible' && gameEl.classList.contains('active') && state && !state.stopped){
+      requestWakeLock();
+    }
+  });
+
   function buildGame(count, limitMs, hideClock, countDownMode){
     var layout = LAYOUTS[count];
 
@@ -341,6 +363,7 @@
     buildGame(playerCount, mins * 60000, hideClockCheckbox.checked, countDown);
     setupEl.style.display = 'none';
     gameEl.classList.add('active');
+    requestWakeLock();
   });
 
   function fmt(ms){
@@ -449,6 +472,7 @@
 
     stopBtn.classList.add('hidden');
     newGameBtn.classList.add('show');
+    releaseWakeLock();
   }
 
   stopBtn.addEventListener('click', function(){ stopGame(null); });
