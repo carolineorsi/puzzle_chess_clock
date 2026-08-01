@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Puzzle Chess Clock</title>
+<style>
+  :root{
+    --bg:#111214;
+    --panel:#1b1d20;
+    --panel-active:#242629;
+    --text:#eceef0;
+    --dim: rgba(236,238,240,0.35);
+    --accent:#e8b23d;
+    --green:#3ecf6e;
+    --red:#e0564a;
+    --line: rgba(0,0,0,0.35);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--text);
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action:manipulation; user-select:none; -webkit-user-select:none;
+  }
+
+  /* ---------- SETUP ---------- */
+  #setup{
+    position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:26px; padding:24px;
+  }
+  #setup h1{ font-size:22px; font-weight:600; margin:0; letter-spacing:0.01em; }
+
+  .setup-group{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .setup-caption{ font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--dim); }
+
+  .segmented{ display:flex; background:var(--panel); border-radius:14px; padding:4px; gap:4px; }
+  .segmented button{
+    border:none; background:transparent; color:var(--dim); font-size:17px; font-weight:600;
+    padding:12px 20px; border-radius:10px; min-width:48px;
+  }
+  .segmented button.selected{ background:var(--accent); color:#1a1408; }
+
+  .limit-field{
+    display:flex; align-items:baseline; gap:10px; background:var(--panel);
+    border-radius:16px; padding:16px 22px;
+  }
+  .limit-field input{
+    width:90px; background:transparent; border:none; color:var(--text);
+    font-size:34px; font-weight:600; outline:none; text-align:right;
+    -moz-appearance: textfield;
+  }
+  .limit-field input::-webkit-outer-spin-button,
+  .limit-field input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .limit-field span{ font-size:15px; color:var(--dim); }
+
+  .checkbox-row{
+    display:flex; align-items:center; gap:10px; cursor:pointer;
+    background:var(--panel); border-radius:14px; padding:14px 20px;
+  }
+  .checkbox-row input{ width:20px; height:20px; accent-color:var(--accent); }
+  .checkbox-row span{ font-size:15px; color:var(--text); }
+
+  #startBtn{
+    padding:16px 48px; border-radius:14px; border:none; background:var(--accent);
+    color:#1a1408; font-size:17px; font-weight:700; letter-spacing:0.01em;
+  }
+  #startBtn:disabled{ opacity:0.3; }
+  #startBtn:not(:disabled):active{ transform:scale(0.97); }
+
+  /* ---------- GAME ---------- */
+  #game{ position:fixed; inset:0; display:none; }
+  #game.active{ display:grid; }
+
+  .cell{
+    display:flex; align-items:center; justify-content:center; position:relative;
+    background:var(--panel); border:1px solid var(--line); transition:background .2s ease;
+    min-width:0; min-height:0;
+  }
+  .cell.rotated{ transform:rotate(180deg); }
+  .cell.on{ background:var(--accent); }
+  .cell.on .side-label{ color:#1a1408; }
+  .cell.off{ opacity:0.45; }
+
+  .cell-inner{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+
+  .side-label{
+    font-size:16px; font-weight:600; letter-spacing:0.04em; color:var(--dim);
+  }
+  .side-label.hide{ display:none; }
+
+  .turn-hint{
+    font-size:12px; letter-spacing:0.06em; text-transform:uppercase; color:#1a1408;
+    opacity:0.65; margin-top:2px; height:14px;
+  }
+  .turn-hint.hide{ display:none; }
+
+  .live-time{
+    font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--text);
+    margin-top:2px;
+  }
+  .cell.off .live-time{ opacity:0.4; }
+  .cell.on .live-time{ opacity:1; color:#1a1408; }
+  .live-time.hidden-time{ display:none; }
+
+  .result{ display:none; flex-direction:column; align-items:center; gap:4px; }
+  .result.show{ display:flex; }
+  .result .time-caption{ font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--dim); }
+  .result .time{ font-size:clamp(24px,7vw,40px); font-weight:700; font-variant-numeric:tabular-nums; }
+  .result .tag{ font-size:16px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--dim); }
+  .cell.winner{ background: var(--green); }
+  .cell.winner .result .time-caption,
+  .cell.winner .result .time,
+  .cell.winner .result .tag{ color:#0a2314; }
+
+  .center-controls{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:10; display:flex; align-items:center; justify-content:center;
+  }
+  #stopBtn{
+    width:72px; height:72px; border-radius:50%; border:2px solid var(--red);
+    background:var(--bg); color:var(--red); font-size:13px; font-weight:700;
+    letter-spacing:0.05em; display:flex; align-items:center; justify-content:center;
+  }
+  #stopBtn:active{ background:rgba(224,86,74,0.15); }
+  #stopBtn.hidden{ display:none; }
+
+  #newGameBtn{
+    display:none; padding:13px 24px; border-radius:12px; border:none;
+    background:var(--accent); color:#1a1408; font-weight:700; font-size:13px; white-space:nowrap;
+  }
+  #newGameBtn.show{ display:block; }
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <h1>Puzzle Chess Clock</h1>
+
+  <div class="setup-group">
+    <div class="setup-caption">Players</div>
+    <div class="segmented" id="playerCountGroup">
+      <button data-count="2" class="selected">2</button>
+      <button data-count="3">3</button>
+      <button data-count="4">4</button>
+    </div>
+  </div>
+
+  <div class="setup-group">
+    <div class="setup-caption">Time limit</div>
+    <div class="limit-field">
+      <input type="number" id="minutesInput" inputmode="numeric" min="1" max="180" value="10">
+      <span>minutes each</span>
+    </div>
+  </div>
+
+  <div class="setup-group">
+    <div class="setup-caption">Timer direction</div>
+    <div class="segmented" id="directionGroup">
+      <button data-direction="up" class="selected">Count Up</button>
+      <button data-direction="down">Count Down</button>
+    </div>
+  </div>
+
+  <div class="setup-group">
+    <label class="checkbox-row" for="hideClockCheckbox">
+      <input type="checkbox" id="hideClockCheckbox" checked>
+      <span>Hide the clock</span>
+    </label>
+  </div>
+
+  <button id="startBtn">Start</button>
+</div>
+
+<div id="game">
+  <div class="center-controls">
+    <button id="stopBtn">STOP</button>
+    <button id="newGameBtn">New game</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var setupEl = document.getElementById('setup');
+  var gameEl = document.getElementById('game');
+  var minutesInput = document.getElementById('minutesInput');
+  var startBtn = document.getElementById('startBtn');
+  var stopBtn = document.getElementById('stopBtn');
+  var newGameBtn = document.getElementById('newGameBtn');
+  var countGroup = document.getElementById('playerCountGroup');
+  var directionGroup = document.getElementById('directionGroup');
+  var hideClockCheckbox = document.getElementById('hideClockCheckbox');
+
+  var playerCount = 2;
+  var countDown = false;
+
+  directionGroup.addEventListener('click', function(e){
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    countDown = btn.dataset.direction === 'down';
+    Array.prototype.forEach.call(directionGroup.children, function(c){ c.classList.remove('selected'); });
+    btn.classList.add('selected');
+  });
+
+  countGroup.addEventListener('click', function(e){
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    playerCount = parseInt(btn.dataset.count, 10);
+    Array.prototype.forEach.call(countGroup.children, function(c){ c.classList.remove('selected'); });
+    btn.classList.add('selected');
+  });
+
+  minutesInput.addEventListener('input', function(){
+    var v = parseFloat(minutesInput.value);
+    startBtn.disabled = !(v > 0);
+  });
+
+  // ---------- Layouts: how each player count maps to a grid ----------
+  // "next" maps each cell index to the index of the next player CLOCKWISE
+  // around the physical layout (not simply +1), based on each cell's
+  // position relative to the center of the screen.
+  var LAYOUTS = {
+    2: {
+      colsTemplate: '1fr',
+      rowsTemplate: '1fr 1fr',
+      cells: [
+        { row: '2 / 3', col: '1 / 2', rotated: false }, // player 0: bottom
+        { row: '1 / 2', col: '1 / 2', rotated: true  }  // player 1: top
+      ],
+      next: [1, 0]
+    },
+    3: {
+      // Rows are 1fr / 2fr so the full-width top cell and the two half-width
+      // bottom cells all cover the same area (same size tap target).
+      colsTemplate: '1fr 1fr',
+      rowsTemplate: '1fr 2fr',
+      cells: [
+        { row: '2 / 3', col: '1 / 2', rotated: false }, // player 0: bottom-left
+        { row: '2 / 3', col: '2 / 3', rotated: false }, // player 1: bottom-right
+        { row: '1 / 2', col: '1 / 3', rotated: true  }  // player 2: top (full width)
+      ],
+      // clockwise: top(2) -> bottom-right(1) -> bottom-left(0) -> top(2)
+      next: [2, 0, 1]
+    },
+    4: {
+      colsTemplate: '1fr 1fr',
+      rowsTemplate: '1fr 1fr',
+      cells: [
+        { row: '2 / 3', col: '1 / 2', rotated: false }, // player 0: bottom-left
+        { row: '2 / 3', col: '2 / 3', rotated: false }, // player 1: bottom-right
+        { row: '1 / 2', col: '1 / 2', rotated: true  }, // player 2: top-left
+        { row: '1 / 2', col: '2 / 3', rotated: true  }  // player 3: top-right
+      ],
+      // clockwise: top-right(3) -> bottom-right(1) -> bottom-left(0) -> top-left(2) -> top-right(3)
+      next: [2, 0, 3, 1]
+    }
+  };
+
+  var state = null;
+
+  function buildGame(count, limitMs, hideClock, countDownMode){
+    var layout = LAYOUTS[count];
+
+    Array.prototype.slice.call(gameEl.querySelectorAll('.cell')).forEach(function(c){ c.remove(); });
+
+    gameEl.style.gridTemplateColumns = layout.colsTemplate;
+    gameEl.style.gridTemplateRows = layout.rowsTemplate;
+
+    var cells = [];
+    layout.cells.forEach(function(spec, i){
+      var cell = document.createElement('div');
+      cell.className = 'cell' + (spec.rotated ? ' rotated' : '');
+      cell.style.gridRow = spec.row;
+      cell.style.gridColumn = spec.col;
+      cell.dataset.index = i;
+
+      var inner = document.createElement('div');
+      inner.className = 'cell-inner';
+
+      var label = document.createElement('div');
+      label.className = 'side-label';
+      label.textContent = 'TAP TO BEGIN';
+
+      var turnHint = document.createElement('div');
+      turnHint.className = 'turn-hint hide';
+      turnHint.textContent = 'Tap to end turn';
+
+      var liveTime = document.createElement('div');
+      liveTime.className = 'live-time' + (hideClock ? ' hidden-time' : '');
+      liveTime.textContent = '00:00';
+
+      var result = document.createElement('div');
+      result.className = 'result';
+      var timeCaption = document.createElement('div');
+      timeCaption.className = 'time-caption';
+      timeCaption.textContent = countDownMode ? 'Time remaining' : 'Time used';
+      var time = document.createElement('div');
+      time.className = 'time';
+      time.textContent = '00:00';
+      var tag = document.createElement('div');
+      tag.className = 'tag';
+      result.appendChild(timeCaption);
+      result.appendChild(time);
+      result.appendChild(tag);
+
+      inner.appendChild(label);
+      inner.appendChild(turnHint);
+      inner.appendChild(liveTime);
+      inner.appendChild(result);
+      cell.appendChild(inner);
+      gameEl.insertBefore(cell, gameEl.firstChild);
+
+      cell.addEventListener('click', function(){ tap(i); });
+
+      cells.push({ el: cell, label: label, turnHint: turnHint, time: time, tag: tag, result: result, liveTime: liveTime });
+    });
+
+    state = {
+      count: count,
+      limitMs: limitMs,
+      used: new Array(count).fill(0),
+      active: null,
+      running: false,
+      started: false,
+      stopped: false,
+      lastTick: 0,
+      cells: cells,
+      next: layout.next,
+      hideClock: hideClock,
+      countDown: countDownMode
+    };
+
+    stopBtn.classList.remove('hidden');
+    newGameBtn.classList.remove('show');
+  }
+
+  startBtn.addEventListener('click', function(){
+    var mins = parseFloat(minutesInput.value);
+    if (!(mins > 0)) return;
+    buildGame(playerCount, mins * 60000, hideClockCheckbox.checked, countDown);
+    setupEl.style.display = 'none';
+    gameEl.classList.add('active');
+  });
+
+  function fmt(ms){
+    ms = Math.max(0, ms);
+    var totalSec = Math.floor(ms / 1000);
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function setActive(idx){
+    state.active = idx;
+    state.running = true;
+    state.cells.forEach(function(c, i){
+      c.el.classList.toggle('on', i === idx);
+      c.el.classList.toggle('off', i !== idx);
+      c.label.textContent = i === idx ? 'YOUR TURN' : '';
+      c.turnHint.classList.toggle('hide', i !== idx);
+    });
+  }
+
+  function tap(idx){
+    if (!state || state.stopped) return;
+
+    if (!state.started){
+      state.started = true;
+      setActive(idx);
+      return;
+    }
+    if (idx !== state.active) return; // only the running player can pass the turn
+
+    setActive(state.next[idx]);
+  }
+
+  function loop(ts){
+    if (state && state.running && state.active !== null && !state.stopped){
+      var dt = ts - state.lastTick;
+      state.used[state.active] += dt;
+      if (state.used[state.active] >= state.limitMs){
+        state.used[state.active] = state.limitMs;
+        stopGame(state.active);
+      }
+    }
+    if (state && !state.hideClock && !state.stopped){
+      state.cells.forEach(function(c, i){
+        var displayMs = state.countDown ? (state.limitMs - state.used[i]) : state.used[i];
+        c.liveTime.textContent = fmt(displayMs);
+      });
+    }
+    if (state) state.lastTick = ts;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(function(ts){ if (state) state.lastTick = ts; requestAnimationFrame(loop); });
+
+  function placeLabel(n){
+    if (n === 1) return 'WINNER!';
+    if (n === 2) return '2nd Place';
+    if (n === 3) return '3rd Place';
+    return n + 'th Place';
+  }
+
+  function stopGame(timedOutIdx){
+    if (!state || state.stopped || !state.started) return;
+    state.stopped = true;
+    state.running = false;
+
+    var used = state.used;
+
+    // competition ranking: equal times share a rank, next rank skips accordingly
+    var sortedIdx = used.map(function(v, i){ return i; })
+                         .sort(function(a, b){ return used[a] - used[b]; });
+    var ranks = new Array(state.count);
+    sortedIdx.forEach(function(idx, i){
+      if (i > 0 && used[idx] === used[sortedIdx[i - 1]]){
+        ranks[idx] = ranks[sortedIdx[i - 1]];
+      } else {
+        ranks[idx] = i + 1;
+      }
+    });
+    var rankOneCount = ranks.filter(function(r){ return r === 1; }).length;
+
+    state.cells.forEach(function(c, i){
+      c.el.classList.remove('on', 'off');
+      c.label.classList.add('hide');
+      c.turnHint.classList.add('hide');
+      c.liveTime.classList.add('hidden-time');
+      var displayMs = state.countDown ? (state.limitMs - used[i]) : used[i];
+      c.time.textContent = fmt(displayMs);
+      c.result.classList.add('show');
+
+      var isFirst = ranks[i] === 1;
+      if (isFirst) c.el.classList.add('winner');
+
+      var tag;
+      if (state.count > 2){
+        tag = (isFirst && rankOneCount > 1) ? 'WINNER!' : placeLabel(ranks[i]);
+      } else {
+        tag = isFirst ? (rankOneCount > 1 ? 'tie' : 'WINNER!') : '';
+      }
+      if (i === timedOutIdx){
+        tag += (tag ? ' · ' : '') + 'out of time';
+        c.el.classList.remove('winner');
+      }
+      c.tag.textContent = tag;
+    });
+
+    stopBtn.classList.add('hidden');
+    newGameBtn.classList.add('show');
+  }
+
+  stopBtn.addEventListener('click', function(){ stopGame(null); });
+
+  newGameBtn.addEventListener('click', function(){
+    gameEl.classList.remove('active');
+    setupEl.style.display = 'flex';
+  });
+
+})();
+</script>
+</body>
+</html>
